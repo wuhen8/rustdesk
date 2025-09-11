@@ -9,4 +9,4 @@ jobs:
     secrets: inherit
     with:
       upload-artifact: true
-      upload-tag: "my-server"
+      upload-tag: "my-server1.2"
