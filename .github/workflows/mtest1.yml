@@ -1,20 +1,33 @@
-# 文件名: .github/workflows/build-windows-test.yml
-
-name: "🚀 Build Test for Flutter with Env Inspector"
+name: "🚀 Build Test for Windows Flutter with Env Inspector"
 
 on:
   workflow_dispatch:
 
-# ... (env: ... 部分保持不变，确保 RENDEZVOUS_SERVER 在这里定义)
 env:
   SCITER_RUST_VERSION: "1.75"
   RUST_VERSION: "1.75"
-  # ... (所有其他的 env 变量)
+  MAC_RUST_VERSION: "1.81"
+  CARGO_NDK_VERSION: "3.1.2"
+  SCITER_ARMV7_CMAKE_VERSION: "3.29.7"
+  SCITER_NASM_DEBVERSION: "2.15.05-1"
+  LLVM_VERSION: "15.0.6"
+  FLUTTER_VERSION: "3.24.5"
+  ANDROID_FLUTTER_VERSION: "3.24.5"
+  FLUTTER_ELINUX_VERSION: "3.16.9"
+  TAG_NAME: "test-build"
+  VCPKG_BINARY_SOURCES: "clear;x-gha,readwrite"
+  VCPKG_COMMIT_ID: "120deac3062162151622ca4860575a33844ba10b"
+  ARMV7_VCPKG_COMMIT_ID: "6f29f12e82a8293156836ad81cc9bf5af41fe836"
+  VERSION: "1.4.2"
+  NDK_VERSION: "r27c"
+  ANDROID_SIGNING_KEY: "${{ secrets.ANDROID_SIGNING_KEY }}"
+  MACOS_P12_BASE64: "${{ secrets.MACOS_P12_BASE64 }}"
+  UPLOAD_ARTIFACT: "true"
+  SIGN_BASE_URL: "${{ secrets.SIGN_BASE_URL }}"
   RS_PUB_KEY: "${{ secrets.RS_PUB_KEY }}"
   RENDEZVOUS_SERVER: "${{ secrets.RENDEZVOUS_SERVER }}"
 
 jobs:
-  # ... (generate-bridge 和 build-RustDeskTempTopMostWindow 任务保持不变)
   generate-bridge:
     uses: ./.github/workflows/bridge.yml
 
@@ -32,40 +45,61 @@ jobs:
     needs: [build-RustDeskTempTopMostWindow, generate-bridge]
     runs-on: windows-2022
     steps:
-      # ... (所有 setup 步骤保持不变，直到 vcpkg 安装完成)
       - name: Checkout source code
         uses: actions/checkout@v4
-        with: { submodules: recursive }
+        with:
+          submodules: recursive
+
       - name: Restore bridge files
         uses: actions/download-artifact@master
-        with: { name: bridge-artifact, path: ./ }
+        with:
+          name: bridge-artifact
+          path: ./
+
       - name: Install LLVM and Clang
         uses: KyleMayes/install-llvm-action@v1
-        with: { version: "15.0.6" }
+        with:
+          version: ${{ env.LLVM_VERSION }}
+
       - name: Install flutter
         uses: subosito/flutter-action@v2.12.0
-        with: { channel: "stable", flutter-version: "3.24.5" }
+        with:
+          channel: "stable"
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+
       - name: Replace engine with rustdesk custom flutter engine
         run: |
           flutter doctor -v
           flutter precache --windows
           Invoke-WebRequest -Uri https://github.com/rustdesk/engine/releases/download/main/windows-x64-release.zip -OutFile windows-x64-release.zip
           Expand-Archive -Path windows-x64-release.zip -DestinationPath windows-x64-release
-          Move-Item -Force -Path windows-x64-release\* -Destination C:/hostedtoolcache/windows/flutter/stable-3.24.5-x64/bin/cache/artifacts/engine/windows-x64-release/
+          Move-Item -Force -Path windows-x64-release\* -Destination C:/hostedtoolcache/windows/flutter/stable-${{ env.FLUTTER_VERSION }}-x64/bin/cache/artifacts/engine/windows-x64-release/
+
       - name: Patch flutter
         shell: bash
         run: |
           cp .github/patches/flutter_3.24.4_dropdown_menu_enableFilter.diff $(dirname $(dirname $(which flutter)))
           cd $(dirname $(dirname $(which flutter)))
-          [[ "3.24.5" == "3.24.5" ]] && git apply flutter_3.24.4_dropdown_menu_enableFilter.diff
+          [[ "3.24.5" == ${{env.FLUTTER_VERSION}} ]] && git apply flutter_3.24.4_dropdown_menu_enableFilter.diff
+
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@v1
-        with: { toolchain: "1.75", targets: x86_64-pc-windows-msvc, components: "rustfmt" }
+        with:
+          toolchain: ${{ env.SCITER_RUST_VERSION }}
+          targets: x86_64-pc-windows-msvc
+          components: "rustfmt"
+
       - uses: Swatinem/rust-cache@v2
-        with: { prefix-key: "windows-2022" }
+        with:
+          prefix-key: "windows-2022"
+
       - name: Setup vcpkg with Github Actions binary cache
         uses: lukka/run-vcpkg@v11
-        with: { vcpkgDirectory: 'C:\vcpkg', vcpkgGitCommitId: "120deac3062162151622ca4860575a33844ba10b", doNotCache: false }
+        with:
+          vcpkgDirectory: 'C:\vcpkg'
+          vcpkgGitCommitId: ${{ env.VCPKG_COMMIT_ID }}
+          doNotCache: false
+
       - name: Install vcpkg dependencies
         shell: bash
         run: |
@@ -74,55 +108,33 @@ jobs:
             exit 1
           fi
 
-      # ==================  新的核心调试步骤  ==================
-      - name: "🧪 Compile and Run Rust Env Inspector"
-        shell: pwsh
+      - name: "🧪 [NEW] Compile and Run Rust Env Inspector"
+        shell: bash
         run: |
-          # 1. 在 Runner 上动态创建一个 Rust 源文件
-          $rust_code = @"
-    use std::env;
-
-    fn main() {
-        println!("--- Rust program is now running ---");
-        println!("--- Listing all environment variables visible to this Rust process (sorted) ---");
-
-        // 将所有环境变量收集到一个 Vec 中以便排序
-        let mut vars: Vec<(String, String)> = env::vars().collect();
-        vars.sort_by(|a, b| a.0.cmp(&b.0)); // 按 key 字母顺序排序
-
-        // 打印所有变量
-        for (key, value) in vars {
-            println!("{}={}", key, value);
-        }
-
-        println!("\n--- Specific check for RustDesk variables ---");
-
-        match env::var("RENDEZVOUS_SERVER") {
-            Ok(val) => println!("✅ FOUND 'RENDEZVOUS_SERVER': {}", val),
-            Err(_) => println!("❌ NOT FOUND: 'RENDEZVOUS_SERVER'"),
-        }
-
-        match env::var("RS_PUB_KEY") {
-            Ok(val) => println!("✅ FOUND 'RS_PUB_KEY': {}", val),
-            Err(_) => println!("❌ NOT FOUND: 'RS_PUB_KEY'"),
-        }
-        
-        println!("\n--- Rust program finished ---");
-    }
-    "@
-          Set-Content -Path "print_envs.rs" -Value $rust_code
+          # 步骤 1: 使用 echo 命令一行行地创建 Rust 源文件，这可以避免所有格式问题
+          echo 'use std::env;' > print_envs.rs
+          echo 'fn main() {' >> print_envs.rs
+          echo '    println!("--- Rust program is now running ---");' >> print_envs.rs
+          echo '    println!("--- Listing all environment variables visible to this Rust process (sorted) ---");' >> print_envs.rs
+          echo '    let mut vars: Vec<(String, String)> = env::vars().collect();' >> print_envs.rs
+          echo '    vars.sort_by(|a, b| a.0.cmp(&b.0));' >> print_envs.rs
+          echo '    for (key, value) in vars {' >> print_envs.rs
+          echo '        println!("{}={}", key, value);' >> print_envs.rs
+          echo '    }' >> print_envs.rs
+          echo '    println!("\n--- Specific check for RustDesk variables ---");' >> print_envs.rs
+          echo '    match env::var("RENDEZVOUS_SERVER") {' >> print_envs.rs
+          echo '        Ok(val) => println!("✅ FOUND 'RENDEZVOUS_SERVER': {}", val),' >> print_envs.rs
+          echo '        Err(_) => println!("❌ NOT FOUND: 'RENDEZVOUS_SERVER'"),' >> print_envs.rs
+          echo '    }' >> print_envs.rs
+          echo '    match env::var("RS_PUB_KEY") {' >> print_envs.rs
+          echo '        Ok(val) => println!("✅ FOUND 'RS_PUB_KEY': {}", val),' >> print_envs.rs
+          echo '        Err(_) => println!("❌ NOT FOUND: 'RS_PUB_KEY'"),' >> print_envs.rs
+          echo '    }' >> print_envs.rs
+          echo '    println!("\n--- Rust program finished ---");' >> print_envs.rs
+          echo '}' >> print_envs.rs
           
-          # 2. 编译这个 Rust 文件
-          Write-Host "Compiling print_envs.rs..."
+          # 步骤 2: 编译并运行
+          echo "Compiling..."
           rustc print_envs.rs
-          
-          # 3. 运行生成的可执行文件
-          Write-Host "Executing print_envs.exe..."
+          echo "Executing..."
           ./print_envs.exe
-      # ===============================================
-
-      # --- 原来的编译步骤已被注释掉，以加快测试速度 ---
-      # - name: Build rustdesk binary
-      #   run: |
-      #     python3 .\build.py --portable --hwcodec --flutter --vram --skip-portable-pack
-      #     Move-Item -Path ./flutter/build/windows/x64/runner/Release -Destination ./rustdesk
