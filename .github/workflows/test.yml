@@ -1,0 +1,58 @@
+# 文件名: .github/workflows/test-env-vars.yml
+
+name: "🧪 Test Environment Variables"
+
+# 触发条件：
+# 1. 'workflow_dispatch': 允许你在 GitHub Actions 页面手动点击 "Run workflow" 来运行。
+# 2. 'push': 每次推送到 main 分支时自动运行（可选，可以注释掉）。
+on:
+  workflow_dispatch: # 让你能手动触发
+  push:
+    branches:
+      - main # 如果你不想每次 push 都运行，可以删除这两行
+
+# 在 workflow 的顶层定义环境变量，模拟你的主 workflow
+env:
+  RENDEZVOUS_SERVER: "${{ secrets.RENDEZVOUS_SERVER }}"
+  RS_PUB_KEY: "${{ secrets.RS_PUB_KEY }}"
+  # 你也可以在这里加入其他想测试的变量
+  # ANOTHER_VAR: "some_static_value"
+
+jobs:
+  check-variables:
+    name: "Check Variables on Different OS"
+    
+    # 使用 strategy.matrix 同时在多个操作系统上测试
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: "Print variables using GitHub context"
+        run: |
+          echo "OS: ${{ runner.os }}"
+          echo "RENDEZVOUS_SERVER from context: [${{ env.RENDEZVOUS_SERVER }}]"
+          echo "RS_PUB_KEY from context: [${{ env.RS_PUB_KEY }}]"
+          
+      - name: "Print variables from shell environment"
+        shell: bash
+        run: |
+          echo "--- Shell Environment Check ---"
+          echo "RENDEZVOUS_SERVER from shell: [$RENDEZVOUS_SERVER]"
+          echo "RS_PUB_KEY from shell: [$RS_PUB_KEY]"
+          
+          echo ""
+          echo "--- Conditional Check ---"
+          if [ -n "$RENDEZVOUS_SERVER" ]; then
+            echo "✅ RENDEZVOUS_SERVER is SET and NOT EMPTY."
+          else
+            echo "❌ RENDEZVOUS_SERVER is NOT SET or IS EMPTY."
+          fi
+          
+          if [ -n "$RS_PUB_KEY" ]; then
+            echo "✅ RS_PUB_KEY is SET and NOT EMPTY."
+          else
+            echo "❌ RS_PUB_KEY is NOT SET or IS EMPTY."
+          fi
