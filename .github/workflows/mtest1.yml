@@ -1,6 +1,6 @@
 # 文件名: .github/workflows/build-windows-test.yml
 
-name: "🚀 Build Test for Windows Flutter with Env Inspector"
+name: "🚀 Build Test for Flutter with Env Inspector"
 
 on:
   workflow_dispatch:
