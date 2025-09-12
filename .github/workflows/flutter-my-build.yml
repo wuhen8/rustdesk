@@ -46,8 +46,6 @@ env:
   MACOS_P12_BASE64: "${{ secrets.MACOS_P12_BASE64 }}"
   UPLOAD_ARTIFACT: "${{ inputs.upload-artifact }}"
   SIGN_BASE_URL: "${{ secrets.SIGN_BASE_URL }}"
-  RS_PUB_KEY: "kWRAu6isNtj14BqH4HbzaciFX8q5JVwPb1WRzey500I="
-  RENDEZVOUS_SERVER: "bp.686860.xyz"
 
 jobs:
   generate-bridge:
@@ -82,23 +80,6 @@ jobs:
             }
           # - { target: aarch64-pc-windows-msvc, os: windows-2022, arch: aarch64 }
     steps:
-
-      - name: "Debug: 安全显示 RENDEZVOUS_SERVER 的内容"
-        run: |
-          echo "--- 方法 1: 字符间加空格 ---"
-          echo "原始值 (会被屏蔽): $env:RENDEZVOUS_SERVER"
-          echo "处理后的值 (不会被屏蔽):"
-          # PowerShell 的等效操作
-          $spaced = $env:RENDEZVOUS_SERVER -replace '(.)', '$1 '
-          echo $spaced
-          echo ""
-          echo "--- 方法 2: Base64 编码 ---"
-          echo "Base64 编码后的值:"
-          # PowerShell 的等效操作
-          $Bytes = [System.Text.Encoding]::UTF8.GetBytes($env:RENDEZVOUS_SERVER)
-          $Base64 = [System.Convert]::ToBase64String($Bytes)
-          echo $Base64
-          echo "---------------------------"
       
       - name: Export GitHub Actions cache environment variables
         uses: actions/github-script@v6
